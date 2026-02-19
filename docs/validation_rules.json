@@ -1,0 +1,62 @@
+{
+  "version": "1.0",
+  "description": "Validation checks applied to every generated lesson before it is accepted.",
+  "checks": [
+    {
+      "check_name": "language_ceiling",
+      "description": "Verifies that all spoken/written sentences in the lesson respect the grade-level word-count ceiling and vocabulary limits defined in language_guidelines.md.",
+      "pass_criteria": "Every sentence has word_count <= max_sentence_length for the target grade AND total new vocabulary introduced <= max_vocab_count for the target grade AND all question types used are in the allowed set for the grade.",
+      "fail_criteria": "Any sentence exceeds the grade word-count ceiling, OR more new vocabulary is introduced than the grade allows, OR a disallowed question type is used.",
+      "example_violation": "Grade 3 max sentence length is 12 words. The sentence 'The big mango tree grows very tall and gives us delicious sweet mangoes every summer' has 15 words — violation."
+    },
+    {
+      "check_name": "bloom_distribution",
+      "description": "Verifies that the quiz section contains the correct number of questions at each Bloom's taxonomy level (L1–L5) as specified in question_bank.md for the target grade.",
+      "pass_criteria": "The count of L1, L2, L3, L4, L5 questions matches the grade distribution table exactly AND questions progress from L1/L2 (Q1–Q3) through L3 (Q4–Q6) to L4/L5 (Q7–Q10).",
+      "fail_criteria": "The actual Bloom's distribution does not match the required distribution, OR progression is violated (e.g., an L5 question appears before Q7).",
+      "example_violation": "Grade 3 requires L1:2, L2:3, L3:3, L4:1, L5:1. Lesson has L1:4, L2:3, L3:2, L4:1, L5:0 — L1 overrepresented, L3 and L5 missing counts."
+    },
+    {
+      "check_name": "interaction_type",
+      "description": "Verifies that the interactive activity uses only interaction types allowed for the target grade in digital_interactions.md, and that the activity Bloom's level is appropriate.",
+      "pass_criteria": "The activity type is in the allowed_interactions list for the grade AND the activity's Bloom's level is L3 (Apply) or L4 (Analyze).",
+      "fail_criteria": "The activity type is not in the allowed list for the grade, OR the activity targets a Bloom's level below L3.",
+      "example_violation": "Grade 1 allows 10 interaction types. The lesson uses 'Build a Flowchart' which is only allowed from Grade 3 onwards — violation."
+    },
+    {
+      "check_name": "definition_alignment",
+      "description": "Verifies that key concepts taught in the lesson use the authoritative definitions from definitions_and_examples.md (when available) and include the required examples.",
+      "pass_criteria": "All concept definitions in the lesson match the KB definitions (semantic equivalence) AND required examples from the KB are present in the lesson.",
+      "fail_criteria": "A concept definition contradicts the KB definition, OR a required example is missing from the lesson content.",
+      "example_violation": "KB defines 'Shrub' as 'a medium-sized plant with many woody stems branching near the ground.' Lesson says 'A shrub is a small plant' — contradicts 'medium-sized' and omits 'woody stems' — violation."
+    },
+    {
+      "check_name": "story_integration",
+      "description": "Verifies that the lesson opening narration references the chapter context narrative (if provided) and at least one concept section weaves the narrative thread.",
+      "pass_criteria": "Opening Narration references the topic context_narrative (if provided) AND at least one narrated_explanation section connects to the story AND no story references contradict the textbook.",
+      "fail_criteria": "A context_narrative is provided but the opening does not reference it, OR story references contradict textbook facts.",
+      "example_violation": "Topic context_narrative is 'Ria visits her grandmother's garden.' Opening Narration does not mention Ria, gardens, or any relatable context — violation."
+    },
+    {
+      "check_name": "audio_pacing",
+      "description": "Verifies that audio-first design markers ([Beat], [Pause], [Emphasis]) are present for proper spoken delivery pacing.",
+      "pass_criteria": "[Pause] marker is present in at least 1 section AND [Beat] markers are present after questions (to let the child think) AND sentence lengths alternate between short and medium.",
+      "fail_criteria": "No [Pause] markers found in the lesson, OR [Beat] markers are missing after questions in the opening narration.",
+      "example_violation": "Lesson opening asks 'Have you ever seen a very tall tree?' but has no [Beat] marker after the question — child has no thinking time — violation."
+    },
+    {
+      "check_name": "feedback_structure",
+      "description": "Verifies that interactive activities have multi-tier hint feedback (3 levels) and quiz questions have both correct and incorrect feedback with reasoning.",
+      "pass_criteria": "Each activity has feedback_hint_1 (nudge), feedback_hint_2 (explicit), and feedback_reveal (answer) AND every quiz question has feedback_correct and feedback_incorrect AND feedback includes reasoning, not just 'Correct!'.",
+      "fail_criteria": "An activity is missing any of the 3 feedback tiers, OR a quiz question has empty or reasoning-free feedback.",
+      "example_violation": "Activity feedback_hint_1 is empty string. Quiz Q3 feedback_correct is just 'Correct!' without restating why the answer is right — violation."
+    },
+    {
+      "check_name": "content_isolation",
+      "description": "Verifies that the lesson does not introduce concepts listed in the topic's exclusions list and that prerequisite topics are assumed as already taught.",
+      "pass_criteria": "No excluded concepts (from topic.exclusions) appear in the lesson content AND the lesson does not re-teach prerequisite concepts but may reference them.",
+      "fail_criteria": "An excluded concept is mentioned or taught in the lesson, OR a prerequisite concept is re-taught as if new.",
+      "example_violation": "Topic exclusions include 'climbers' and 'creepers'. Lesson section 2 says 'Some plants like Money Plant are climbers that grow on walls' — introduces excluded concept — violation."
+    }
+  ]
+}

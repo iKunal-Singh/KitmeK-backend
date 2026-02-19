@@ -1,0 +1,678 @@
+openapi: "3.1.0"
+info:
+  title: KitmeK Lesson Generation API
+  description: |
+    Real-time NCERT-aligned lesson generation backend for Grades K–5.
+    Accepts a topic request and generates a complete, validated lesson
+    (DOCX + metadata + validation report) within 30–60 seconds.
+  version: "1.0.0"
+  contact:
+    name: KitmeK Engineering
+servers:
+  - url: http://localhost:8000
+    description: Local development
+  - url: https://api.kitmek.local
+    description: On-premise production
+
+tags:
+  - name: Health
+    description: System health and readiness
+  - name: Lessons
+    description: Lesson generation and retrieval
+  - name: Topics
+    description: Curriculum topic browsing
+  - name: Knowledge Base
+    description: Knowledge base version management
+
+paths:
+  /health:
+    get:
+      operationId: healthCheck
+      tags: [Health]
+      summary: System health check
+      description: Returns service status, active KB version, and uptime.
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              example:
+                status: ok
+                uptime_seconds: 3621.4
+                kb_version: "1.0"
+                database: connected
+                timestamp: "2026-02-18T14:23:45Z"
+        "500":
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: "Database connection failed"
+
+  /lessons/generate:
+    post:
+      operationId: generateLesson
+      tags: [Lessons]
+      summary: Generate a lesson for a topic
+      description: |
+        Accepts a topic ID and optional KB version, generates a complete
+        NCERT-aligned lesson with validation. Returns the request ID
+        for status polling and DOCX download.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerationRequest"
+            example:
+              topic_id: 42
+              kb_version: "1.0"
+      responses:
+        "200":
+          description: Lesson generation completed or started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerationResponse"
+              example:
+                request_id: "550e8400-e29b-41d4-a716-446655440000"
+                status: completed
+                docx_url: "/lessons/550e8400-e29b-41d4-a716-446655440000/download"
+                validation_report:
+                  passed: true
+                  checks:
+                    - name: language_ceiling
+                      status: passed
+                      details: {}
+                  warnings: []
+                  errors: []
+                  overall_score: 1.0
+                generation_time_seconds: 47.3
+        "400":
+          description: Invalid request payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: "topic_id is required"
+        "404":
+          description: Topic or KB version not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: "Topic with id 999 not found"
+        "422":
+          description: Validation error in request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationErrorResponse"
+        "500":
+          description: Internal server error during generation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: "Lesson generation failed"
+
+  /lessons/{request_id}:
+    get:
+      operationId: getLessonStatus
+      tags: [Lessons]
+      summary: Poll status of a generation request
+      description: Returns the current status and progress of a lesson generation request.
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200":
+          description: Request status returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LessonStatusResponse"
+              example:
+                request_id: "550e8400-e29b-41d4-a716-446655440000"
+                status: completed
+                completion_percentage: 100
+                message: "Lesson generated successfully"
+                validation_report:
+                  passed: true
+                  checks: []
+                  warnings: []
+                  errors: []
+                  overall_score: 1.0
+                generation_time_seconds: 47.3
+        "404":
+          description: Request not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: "Generation request not found"
+        "422":
+          description: Invalid request ID format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /lessons/{request_id}/download:
+    get:
+      operationId: downloadLesson
+      tags: [Lessons]
+      summary: Download generated DOCX file
+      description: Returns the generated DOCX lesson file for a completed request.
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      responses:
+        "200":
+          description: DOCX file returned
+          content:
+            application/vnd.openxmlformats-officedocument.wordprocessingml.document:
+              schema:
+                type: string
+                format: binary
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              example: 'attachment; filename="lesson_550e8400.docx"'
+        "404":
+          description: Request not found or lesson not yet generated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: "Lesson not found or not yet completed"
+        "422":
+          description: Invalid request ID format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /topics:
+    get:
+      operationId: listTopics
+      tags: [Topics]
+      summary: List available topics for lesson generation
+      description: |
+        Returns topics filtered by optional grade, subject, and chapter parameters.
+        Includes prerequisite and exclusion metadata.
+      parameters:
+        - name: grade
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by grade code (K, 1, 2, 3, 4, 5)
+          example: "3"
+        - name: subject
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by subject code
+          example: "EVS"
+        - name: chapter
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Filter by chapter ID
+          example: 1
+      responses:
+        "200":
+          description: List of topics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopicListResponse"
+              example:
+                topics:
+                  - id: 42
+                    topic_name: "Trees vs Shrubs"
+                    topic_number: 1
+                    chapter_name: "Types of Plants"
+                    grade: "3"
+                    subject: "EVS"
+                    prerequisites: []
+                    exclusions: ["climbers", "creepers"]
+                count: 1
+        "400":
+          description: Invalid filter parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /topics/{topic_id}:
+    get:
+      operationId: getTopicDetail
+      tags: [Topics]
+      summary: Get details of a specific topic
+      description: Returns full topic metadata including prerequisites, exclusions, and context narrative.
+      parameters:
+        - name: topic_id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Topic ID
+          example: 42
+      responses:
+        "200":
+          description: Topic details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopicDetailResponse"
+              example:
+                id: 42
+                topic_name: "Trees vs Shrubs"
+                topic_number: 1
+                topic_description: "Compare trees and shrubs by height, stem type, and branching."
+                chapter_name: "Types of Plants"
+                chapter_number: 1
+                grade: "3"
+                subject: "EVS"
+                sequence_number: 1
+                prerequisites: []
+                exclusions: ["climbers", "creepers"]
+                context_narrative: "Ria visits her grandmother's garden and notices plants of different sizes."
+        "404":
+          description: Topic not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: "Topic with id 999 not found"
+        "422":
+          description: Invalid topic ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationErrorResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /kb/version:
+    get:
+      operationId: getKBVersion
+      tags: [Knowledge Base]
+      summary: Get active KB version and metadata
+      description: Returns the currently active knowledge base version, its timestamp, and file checksum.
+      responses:
+        "200":
+          description: Active KB version info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KBVersionResponse"
+              example:
+                kb_version: "1.0"
+                timestamp: "2026-02-18T10:00:00Z"
+                files_checksum: "sha256:a1b2c3d4e5f6..."
+                is_active: true
+        "404":
+          description: No active KB version found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: "No active knowledge base version found"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /kb/reload:
+    post:
+      operationId: reloadKB
+      tags: [Knowledge Base]
+      summary: Reload KB files from disk (Admin)
+      description: |
+        Re-reads all knowledge base files from the configured KB directory,
+        creates a new version, and activates it. Previous version is deactivated.
+      responses:
+        "200":
+          description: KB reloaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KBReloadResponse"
+              example:
+                status: success
+                new_version: "1.1"
+                previous_version: "1.0"
+                timestamp: "2026-02-18T15:00:00Z"
+                files_loaded:
+                  - NCERT_Pedagogical_Style_Knowledge.md
+                  - language_guidelines.md
+                  - digital_interactions.md
+                  - question_bank.md
+                  - definitions_and_examples.md
+        "500":
+          description: KB reload failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: "Failed to parse KB file: language_guidelines.md"
+
+components:
+  parameters:
+    RequestId:
+      name: request_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: UUID of the generation request
+      example: "550e8400-e29b-41d4-a716-446655440000"
+
+  responses:
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            detail: "Internal server error"
+
+  schemas:
+    # -- Health --
+    HealthResponse:
+      type: object
+      required: [status, timestamp]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, error]
+        uptime_seconds:
+          type: number
+          format: float
+        kb_version:
+          type: string
+          nullable: true
+        database:
+          type: string
+          enum: [connected, disconnected]
+        timestamp:
+          type: string
+          format: date-time
+
+    # -- Generation Request/Response --
+    GenerationRequest:
+      type: object
+      required: [topic_id]
+      properties:
+        topic_id:
+          type: integer
+          description: ID of the topic to generate a lesson for
+        kb_version:
+          type: string
+          nullable: true
+          description: KB version to use (defaults to active version)
+
+    GenerationResponse:
+      type: object
+      required: [request_id, status]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, processing, completed, failed]
+        docx_url:
+          type: string
+          nullable: true
+          description: URL to download the DOCX (present when completed)
+        validation_report:
+          $ref: "#/components/schemas/ValidationReport"
+        generation_time_seconds:
+          type: number
+          format: float
+          nullable: true
+
+    # -- Lesson Status --
+    LessonStatusResponse:
+      type: object
+      required: [request_id, status]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, processing, completed, failed]
+        completion_percentage:
+          type: integer
+          minimum: 0
+          maximum: 100
+        message:
+          type: string
+        validation_report:
+          $ref: "#/components/schemas/ValidationReport"
+        generation_time_seconds:
+          type: number
+          format: float
+          nullable: true
+
+    # -- Validation Report --
+    ValidationReport:
+      type: object
+      required: [passed, checks, warnings, errors, overall_score]
+      properties:
+        passed:
+          type: boolean
+        checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidationCheck"
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidationWarning"
+        errors:
+          type: array
+          items:
+            type: string
+        overall_score:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+
+    ValidationCheck:
+      type: object
+      required: [name, status]
+      properties:
+        name:
+          type: string
+          description: Check identifier
+          enum:
+            - language_ceiling
+            - bloom_distribution
+            - interaction_type
+            - definition_alignment
+            - story_integration
+            - audio_pacing
+            - feedback_structure
+            - content_isolation
+        status:
+          type: string
+          enum: [passed, failed, skipped]
+        grade:
+          type: string
+          nullable: true
+        details:
+          type: object
+          additionalProperties: true
+
+    ValidationWarning:
+      type: object
+      required: [type, message, severity]
+      properties:
+        type:
+          type: string
+        message:
+          type: string
+        severity:
+          type: string
+          enum: [low, medium, high]
+
+    # -- Topics --
+    TopicSummary:
+      type: object
+      required: [id, topic_name, chapter_name, grade, subject]
+      properties:
+        id:
+          type: integer
+        topic_name:
+          type: string
+        topic_number:
+          type: integer
+        chapter_name:
+          type: string
+        grade:
+          type: string
+        subject:
+          type: string
+        prerequisites:
+          type: array
+          items:
+            type: integer
+        exclusions:
+          type: array
+          items:
+            type: string
+
+    TopicListResponse:
+      type: object
+      required: [topics, count]
+      properties:
+        topics:
+          type: array
+          items:
+            $ref: "#/components/schemas/TopicSummary"
+        count:
+          type: integer
+
+    TopicDetailResponse:
+      type: object
+      required: [id, topic_name, chapter_name, grade, subject]
+      properties:
+        id:
+          type: integer
+        topic_name:
+          type: string
+        topic_number:
+          type: integer
+        topic_description:
+          type: string
+          nullable: true
+        chapter_name:
+          type: string
+        chapter_number:
+          type: integer
+        grade:
+          type: string
+        subject:
+          type: string
+        sequence_number:
+          type: integer
+        prerequisites:
+          type: array
+          items:
+            type: integer
+        exclusions:
+          type: array
+          items:
+            type: string
+        context_narrative:
+          type: string
+          nullable: true
+
+    # -- Knowledge Base --
+    KBVersionResponse:
+      type: object
+      required: [kb_version, timestamp]
+      properties:
+        kb_version:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        files_checksum:
+          type: string
+        is_active:
+          type: boolean
+
+    KBReloadResponse:
+      type: object
+      required: [status, new_version, timestamp]
+      properties:
+        status:
+          type: string
+          enum: [success]
+        new_version:
+          type: string
+        previous_version:
+          type: string
+          nullable: true
+        timestamp:
+          type: string
+          format: date-time
+        files_loaded:
+          type: array
+          items:
+            type: string
+
+    # -- Errors --
+    ErrorResponse:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: string
+
+    ValidationErrorResponse:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: array
+          items:
+            type: object
+            properties:
+              loc:
+                type: array
+                items:
+                  oneOf:
+                    - type: string
+                    - type: integer
+              msg:
+                type: string
+              type:
+                type: string
